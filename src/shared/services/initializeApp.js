@@ -118,6 +118,12 @@ async function runHeavyStartup() {
   import("@/sse/services/backgroundTokenRefresh.js")
     .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
+
+  // Proactive Antigravity quota sweep: pre-block accounts below threshold and
+  // persist the block so a restart does not cause a 429 burst. Idempotent.
+  import("@/sse/services/antigravityQuotaSweep.js")
+    .then(({ startAntigravityQuotaSweep }) => startAntigravityQuotaSweep())
+    .catch((e) => console.log("[AGQuotaSweep] scheduler start failed:", e.message));
 }
 
 // Cheap local check: keeps the scheduler module (and its provider graph) unloaded

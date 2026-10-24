@@ -6,6 +6,8 @@
 
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getAntigravityUsage } from "open-sse/services/usage/google.js";
+import { buildModelLockUpdate } from "open-sse/services/accountFallback.js";
+import { updateProviderConnection } from "@/lib/localDb";
 import * as log from "../utils/logger.js";
 
 // In-memory cache: connectionId → { [modelId]: { remainingPercentage, resetAt } }
@@ -238,6 +240,25 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
 }
 
 /**
+ * Persist an Antigravity quota block as a flat modelLock_<model> field so it
+ * survives a container restart (auth pre-filter already reads it via
+ * isModelLockActive — no auth.js change needed). Fail-open: a missing arg,
+ * a past/absent resetAt, or a DB error is a no-op.
+ */
+export async function persistAntigravityQuotaBlock(connectionId, model, resetAt) {
+  if (!connectionId || !model || !resetAt) return;
+  const resetMs = new Date(resetAt).getTime();
+  if (!Number.isFinite(resetMs) || resetMs <= Date.now()) return;
+  try {
+    const lock = buildModelLockUpdate(model, resetMs - Date.now());
+    await updateProviderConnection(connectionId, lock);
+    log.debug("AG_QUOTA", `${connectionId.slice(0, 8)} | PERSIST_BLOCK ${model} until ${resetAt}`);
+  } catch (e) {
+    log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | persist block failed: ${e.message}`);
+  }
+}
+
+/**
  * Handle Antigravity 409/429 — refresh RAM cache and return model resetAt when exhausted.
  * Called from chat handler error path.
  * @returns {number|null} resetAt timestamp ms (for resetsAtMs passthrough) or null
@@ -296,5 +317,7 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
   quotaCache.set(connectionId, cached);
 
   log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | UPSTREAM_${status} ${model} — quota exhausted; CACHE_BLOCK until ${quota.resetAt}`);
+  // Persist so the block survives a restart (gap 2); RAM-only strike path above is left untouched.
+  await persistAntigravityQuotaBlock(connectionId, model, quota.resetAt);
   return resetMs;
 }
