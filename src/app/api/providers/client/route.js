@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getProviderConnections } from "@/lib/localDb";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { findPrimaryConnectionIds } from "@/shared/utils/primaryAccount";
 
 const SAFE_FIELDS = [
   "id", "provider", "authType", "name", "email", "displayName",
@@ -104,7 +105,12 @@ export async function GET(request) {
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const currentPage = Math.min(page, totalPages);
     const offset = (currentPage - 1) * pageSize;
-    const pageConnections = sortedConnections.slice(offset, offset + pageSize).map(sanitize);
+    // Primary is resolved per provider over the full filtered pool (not just the
+    // current page) so pagination never changes who is flagged.
+    const primaryIds = findPrimaryConnectionIds(providerFilteredConnections);
+    const pageConnections = sortedConnections
+      .slice(offset, offset + pageSize)
+      .map((c) => ({ ...sanitize(c), isPrimary: primaryIds.has(c.id) }));
 
     return NextResponse.json({
       connections: pageConnections,

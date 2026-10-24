@@ -40,7 +40,7 @@ import {
   QUOTA_SORT_OPTIONS,
 } from "./utils";
 import Card from "@/shared/components/Card";
-import { ConfirmModal, EditConnectionModal } from "@/shared/components";
+import { ConfirmModal, EditConnectionModal, Badge } from "@/shared/components";
 import AutoPingScheduleModal from "@/app/(dashboard)/dashboard/providers/[id]/AutoPingScheduleModal";
 import { getScheduleSlotLabels } from "@/shared/services/quotaPingSchedule";
 import { USAGE_SUPPORTED_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
@@ -1154,9 +1154,16 @@ export default function ProviderLimits() {
                       />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-text-primary truncate">
-                        {providerLabel(conn.provider)}
-                      </h3>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <h3 className="text-sm font-semibold text-text-primary truncate">
+                          {providerLabel(conn.provider)}
+                        </h3>
+                        {conn.isPrimary && conn.isActive !== false && (
+                          <Badge variant="primary" size="sm" dot>
+                            In use
+                          </Badge>
+                        )}
+                      </div>
                       {getConnectionLabel(conn) ? (
                         <p className="text-xs text-text-muted truncate">
                           {getConnectionLabel(conn)}

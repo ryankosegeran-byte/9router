@@ -210,6 +210,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
           )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+            {connection.isPrimary && connection.isActive !== false && (
+              <Badge variant="primary" size="sm" dot>
+                In use
+              </Badge>
+            )}
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
@@ -341,6 +346,7 @@ ConnectionRow.propTypes = {
     lastError: PropTypes.string,
     priority: PropTypes.number,
     globalPriority: PropTypes.number,
+    isPrimary: PropTypes.bool,
   }).isRequired,
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
