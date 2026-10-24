@@ -1,6 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, getModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
@@ -113,27 +113,38 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     });
 
     if (availableConnections.length === 0) {
-      // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
-      const lockedConns = connections.filter(c => isModelLockActive(c, model));
-      const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
+      // When every account is blocked, report the one that comes back soonest
+      // and its ETA, so the caller knows when to retry instead of giving up.
+      const now = Date.now();
+      const byConn = new Map(); // connectionId → { conn, until (ms) }
+      for (const c of connections) {
+        const until = getModelLockUntil(c, model);
+        if (until) byConn.set(c.id, { conn: c, until: new Date(until).getTime() });
+      }
+      // Antigravity keeps its exhausted state in the live quota cache, not a lock.
       if (isAntigravity && model && antigravityQuotaCache) {
-        connections.forEach((c) => {
+        for (const c of connections) {
           const connQuotas = antigravityQuotaCache.get(c.id);
           const quota = getAntigravityModelQuota(connQuotas, model) || connQuotas?.[model];
-          const resetAt = quota?.resetAt;
-          if (resetAt && new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
-        });
+          const resetMs = quota?.resetAt ? new Date(quota.resetAt).getTime() : 0;
+          if (resetMs <= now) continue;
+          const prev = byConn.get(c.id);
+          if (!prev || resetMs < prev.until) byConn.set(c.id, { conn: c, until: resetMs });
+        }
       }
-      const earliest = expiries.sort()[0] || null;
-      if (earliest) {
-        const earliestConn = lockedConns[0];
-        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+      const soonest = [...byConn.values()].sort((a, b) => a.until - b.until)[0] || null;
+      if (soonest) {
+        const name = soonest.conn.displayName || soonest.conn.name || soonest.conn.email || soonest.conn.id?.slice(0, 8) || "unknown";
+        const earliest = new Date(soonest.until).toISOString();
+        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"}; next free ${name} (${formatRetryAfter(earliest)}) | lastError=${soonest.conn.lastError?.slice(0, 50)}`);
         return {
           allRateLimited: true,
           retryAfter: earliest,
-          retryAfterHuman: formatRetryAfter(earliest),
-          lastError: earliestConn?.lastError || null,
-          lastErrorCode: earliestConn?.errorCode || null
+          retryAfterHuman: `${formatRetryAfter(earliest)} | next: ${name}`,
+          retryAfterConnection: soonest.conn.id,
+          retryAfterConnectionName: name,
+          lastError: soonest.conn.lastError || null,
+          lastErrorCode: soonest.conn.errorCode || null
         };
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);

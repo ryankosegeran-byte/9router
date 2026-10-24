@@ -4,7 +4,7 @@
 // the first error. A 400 "maximum context length" from one session therefore
 // looked like the same failure in unrelated sessions.
 import { describe, expect, it } from "vitest";
-import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
+import { checkFallbackError, getModelLockUntil } from "../../open-sse/services/accountFallback.js";
 
 describe("checkFallbackError — request-scoped vs account-scoped failures", () => {
   it("does not cool the account down for a 400 caused by the request", () => {
@@ -55,5 +55,24 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
 
     expect(result.shouldFallback).toBe(true);
     expect(result.cooldownMs).toBeGreaterThan(0);
+  });
+});
+
+describe("getModelLockUntil", () => {
+  const future = (h) => new Date(Date.now() + h * 3600_000).toISOString();
+
+  it("returns null when neither the model lock nor the account lock is active", () => {
+    expect(getModelLockUntil({}, "m")).toBeNull();
+    expect(getModelLockUntil({ modelLock_m: new Date(Date.now() - 1000).toISOString() }, "m")).toBeNull();
+  });
+
+  it("takes the later of modelLock_<model> and modelLock___all", () => {
+    const soon = future(1);
+    const late = future(3);
+    const conn = { modelLock_m: soon, modelLock___all: late };
+    // model lock alone would report "free in 1h" — the account lock keeps it blocked
+    expect(getModelLockUntil(conn, "m")).toBe(late);
+    // a different model is only bound by the account-level lock
+    expect(getModelLockUntil(conn, "other")).toBe(late);
   });
 });

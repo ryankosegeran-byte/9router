@@ -163,6 +163,22 @@ export function getEarliestModelLockUntil(connection) {
 }
 
 /**
+ * Effective lock expiry for one connection + model: the later of
+ * `modelLock_<model>` and the account-level `modelLock___all`, so an account
+ * blocked by a broad lock is not reported as free too early.
+ * @returns {string|null} ISO timestamp, or null when neither lock is active
+ */
+export function getModelLockUntil(connection, model) {
+  if (!connection) return null;
+  let latest = 0;
+  for (const key of new Set([getModelLockKey(model), MODEL_LOCK_ALL])) {
+    const t = connection[key] ? new Date(connection[key]).getTime() : 0;
+    if (Number.isFinite(t) && t > latest) latest = t;
+  }
+  return latest > Date.now() ? new Date(latest).toISOString() : null;
+}
+
+/**
  * Build update object to set a model lock on a connection.
  */
 export function buildModelLockUpdate(model, cooldownMs) {

@@ -81,7 +81,7 @@ describe("Antigravity quota-aware routing", () => {
     }
   });
 
-  it("reports retry time when every account is cache-blocked", async () => {
+  it("reports retry time and the soonest account when every account is cache-blocked", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
     mocks.getProviderConnections.mockResolvedValue([{ id: "ag-a", email: "a@example.com", isActive: true }]);
@@ -93,7 +93,30 @@ describe("Antigravity quota-aware routing", () => {
       await expect(getProviderCredentials("antigravity", null, MODEL)).resolves.toMatchObject({
         allRateLimited: true,
         retryAfter: FUTURE_RESET,
+        retryAfterConnection: "ag-a",
+        retryAfterConnectionName: "a@example.com",
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("names the account that comes back soonest when all are locked", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    mocks.getProviderConnections.mockResolvedValue([
+      { id: "ag-slow", email: "slow@example.com", isActive: true, [`modelLock_${MODEL}`]: "2026-08-26T05:00:00.000Z" },
+      { id: "ag-fast", email: "fast@example.com", isActive: true, [`modelLock_${MODEL}`]: "2026-08-26T02:00:00.000Z" },
+    ]);
+
+    try {
+      const creds = await getProviderCredentials("antigravity", null, MODEL);
+      expect(creds.allRateLimited).toBe(true);
+      expect(creds.retryAfter).toBe("2026-08-26T02:00:00.000Z");
+      expect(creds.retryAfterConnection).toBe("ag-fast");
+      expect(creds.retryAfterConnectionName).toBe("fast@example.com");
+      expect(creds.retryAfterHuman).toContain("2h");
+      expect(creds.retryAfterHuman).toContain("fast@example.com");
     } finally {
       vi.useRealTimers();
     }
