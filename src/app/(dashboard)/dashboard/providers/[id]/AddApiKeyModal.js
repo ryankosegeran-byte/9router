@@ -44,7 +44,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     deployment: "",
     organization: "",
   });
-  const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [cloudflareData, setCloudflareData] = useState({ accountId: "", analyticsToken: "" });
   const [bedrockData, setBedrockData] = useState({
     profile: "",
     region: "",
@@ -78,7 +78,10 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       };
     }
     if (isCloudflareAi) {
-      return { accountId: cloudflareData.accountId };
+      const data = { accountId: cloudflareData.accountId };
+      // Optional: a token with Account Analytics: Read unlocks real neuron usage.
+      if (cloudflareData.analyticsToken.trim()) data.analyticsToken = cloudflareData.analyticsToken.trim();
+      return data;
     }
     if (usesAwsCredentialForm) {
       // Only send what the user filled in: an empty `profile` would otherwise select profile
@@ -363,6 +366,15 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               value={cloudflareData.accountId}
               onChange={(e) => setCloudflareData({ ...cloudflareData, accountId: e.target.value })}
               placeholder="abc123def456..."
+            />
+            <Input
+              label="Analytics Token (optional)"
+              type="password"
+              value={cloudflareData.analyticsToken}
+              onChange={(e) => setCloudflareData({ ...cloudflareData, analyticsToken: e.target.value })}
+              placeholder="Token with Account Analytics: Read"
+              className="mt-3"
+              hint="Optional. A token with Account Analytics: Read shows real daily neuron usage. Leave blank to use the API key above."
             />
             <p className="text-xs text-text-muted mt-2">
               Find your Account ID in the right sidebar of <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">dash.cloudflare.com</a>
