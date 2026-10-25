@@ -70,7 +70,7 @@ const USAGE_HANDLERS = {
   "xiaomi-mimo": (c) => getXiaomiMimoUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   commandcode: (c) => getCommandCodeUsage(c.apiKey, c.proxyOptions),
   cursor: (c) => getCursorUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
-  "cloudflare-ai": (c) => getCloudflareUsage(c.connection),
+  "cloudflare-ai": (c) => getCloudflareUsage(c.connection, c.proxyOptions, { force: c.force }),
 };
 
 // Qoder intl/CN share one usage path: PATs must be exchanged to a job token
