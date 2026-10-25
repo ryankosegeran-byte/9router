@@ -1,4 +1,5 @@
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { flattenMessageContent } from "./message.js";
 
 // Strip request params a given provider/model rejects upstream (e.g. HTTP 400).
 // Config-driven: add a rule instead of scattering `delete body.x` across executors.
@@ -80,15 +81,11 @@ export function stripUnsupportedParams(provider, model, body) {
         }
       }
     }
-    // CF Workers AI oneOf root schema only accepts content as plain string (#1926)
+    // CF Workers AI per-model schemas accept only plain-string content: reject
+    // content-parts arrays AND null (assistant tool-call turns) with HTTP 400
+    // (#1926, cloudflare-os#54).
     if (rule.flattenContent && Array.isArray(body.messages)) {
-      for (const msg of body.messages) {
-        if (msg && Array.isArray(msg.content)) {
-          msg.content = msg.content
-            .map(b => (b?.type === "text" && typeof b.text === "string") ? b.text : "")
-            .join("");
-        }
-      }
+      body.messages = flattenMessageContent(body.messages);
     }
     if (rule.clampToModelMaxOutput || Number.isFinite(rule.maxOutputCap)) {
       const modelCeiling = getCapabilitiesForModel(provider, model).maxOutput;
