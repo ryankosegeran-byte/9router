@@ -10,6 +10,7 @@ import {
   parseQuotaData,
   calculatePercentage,
   filterQuotasByVisibility,
+  findInUsePools,
   getHiddenQuotaRows,
   getQuotaVisibilityKey,
   getConnectionLabel,
@@ -57,6 +58,8 @@ const KIRO_METHOD_LABELS = {
   imported: "Imported Token",
   api_key: "API Key",
 };
+
+const EMPTY_POOLS = new Set();
 
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
@@ -791,6 +794,24 @@ export default function ProviderLimits() {
     [connections, quotaData, expiringFirst, providerFilter, quotaSortMode],
   );
 
+  // Which account the router is serving per quota pool (Antigravity: per model
+  // family). Replaces the account-wide "In use" badge, which flipped to the next
+  // account as soon as one model family ran dry.
+  const inUsePools = useMemo(
+    () => findInUsePools(sortedConnections, quotaData),
+    [sortedConnections, quotaData],
+  );
+  const connectionLabels = useMemo(
+    () =>
+      new Map(
+        sortedConnections.map((conn) => [
+          conn.id,
+          getConnectionLabel(conn) || conn.id.slice(0, 8),
+        ]),
+      ),
+    [sortedConnections],
+  );
+
   // Connection is depleted when any quota entry hit the threshold
   const isConnectionDepleted = (conn) => {
     const quotas = quotaData[conn.id]?.quotas;
@@ -1133,6 +1154,24 @@ export default function ProviderLimits() {
           const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
           const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
 
+          // Pools this account serves, plus the pools handed to a sibling account.
+          const ownedPools = inUsePools.poolsByConnection.get(conn.id) || EMPTY_POOLS;
+          const providerPools =
+            inUsePools.poolKeysByProvider.get(conn.provider) || EMPTY_POOLS;
+          const poolOwners = inUsePools.poolOwnersByProvider.get(conn.provider);
+          const handoffPools = new Map();
+          if (poolOwners) {
+            for (const poolKey of providerPools) {
+              const ownerId = poolOwners.get(poolKey);
+              if (!ownerId || ownerId === conn.id) continue;
+              // "" = owner is on another page (or every account is dry).
+              handoffPools.set(poolKey, connectionLabels.get(ownerId) || "");
+            }
+          }
+          // Account badge only when this account serves every pool it could.
+          const servesEveryPool =
+            providerPools.size === 0 || ownedPools.size >= providerPools.size;
+
           return (
             <Card
               key={conn.id}
@@ -1158,7 +1197,7 @@ export default function ProviderLimits() {
                         <h3 className="text-sm font-semibold text-text-primary truncate">
                           {providerLabel(conn.provider)}
                         </h3>
-                        {conn.isPrimary && conn.isActive !== false && (
+                        {conn.isPrimary && conn.isActive !== false && servesEveryPool && (
                           <Badge variant="primary" size="sm" dot>
                             In use
                           </Badge>
@@ -1384,6 +1423,9 @@ export default function ProviderLimits() {
                   <QuotaTable
                     quotas={visibleQuotas}
                     compact
+                    provider={conn.provider}
+                    inUsePools={ownedPools}
+                    handoffPools={handoffPools}
                     sortMode="default"
                     showSortLabel={
                       conn.provider === "codex" && quotaSortMode !== "default"
