@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -12,6 +12,7 @@ import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
+import { findPoolOwners, getInUsePoolLabels } from "@/shared/utils/primaryAccount";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import ModelRow from "./ModelRow";
@@ -1026,6 +1027,14 @@ export default function ProviderDetailPage() {
 
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
 
+  // Which quota pool the router serves from which account (Antigravity: per
+  // model family). Replaces the account-wide "In use" badge, which jumped to
+  // the next account as soon as a single family ran dry.
+  const poolOwners = useMemo(
+    () => findPoolOwners(providerId, connections),
+    [providerId, connections],
+  );
+
   const connectionsList = (
     <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03] max-h-[500px] overflow-y-auto pr-1">
       {connections
@@ -1043,6 +1052,7 @@ export default function ProviderDetailPage() {
               <ConnectionRow
                 connection={conn}
                 proxyPools={proxyPools}
+                inUseLabels={getInUsePoolLabels(poolOwners, conn.id)}
                 isOAuth={isOAuth}
                 isFirst={index === 0}
                 isLast={index === connections.length - 1}

@@ -1,4 +1,5 @@
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
+import { getModelPoolKey } from "@/shared/utils/primaryAccount";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 export const QUOTA_CACHE_KEY = "quotaCacheData";
@@ -329,12 +330,7 @@ export function getQuotaVisibilityKey(quota) {
  * (see getAntigravityModelFamily); every other provider shares one pool.
  */
 export function getQuotaPoolKey(provider, quota) {
-  const key = quota?.modelKey;
-  if (!key || String(provider || "").toLowerCase() !== "antigravity") return "*";
-  if (key.includes("image")) return key;
-  if (key.startsWith("gemini")) return "gemini";
-  if (key.startsWith("claude") || key.startsWith("gpt")) return "claude_gpt";
-  return key;
+  return getModelPoolKey(provider, quota?.modelKey);
 }
 
 // Pool row still has quota — or its reset already passed, so the router retries it.
