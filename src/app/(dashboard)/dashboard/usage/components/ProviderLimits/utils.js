@@ -1,4 +1,5 @@
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
+import { getModelPoolKey } from "@/shared/utils/primaryAccount";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 export const QUOTA_CACHE_KEY = "quotaCacheData";
@@ -320,6 +321,93 @@ export function getRemainingPercentage(quota) {
 export function getQuotaVisibilityKey(quota) {
   if (!quota || typeof quota !== "object") return "";
   return String(quota.modelKey || quota.name || "").trim();
+}
+
+// ─── Pool ownership ──────────────────────────────────────────────────────────
+
+/**
+ * Pool a quota row draws from. Antigravity splits quota across model families
+ * (see getAntigravityModelFamily); every other provider shares one pool.
+ */
+export function getQuotaPoolKey(provider, quota) {
+  return getModelPoolKey(provider, quota?.modelKey);
+}
+
+// Pool row still has quota — or its reset already passed, so the router retries it.
+function isPoolRowAvailable(quota) {
+  if (quota?.unlimited === true || !quota?.total) return true;
+  if (getRemainingPercentage(quota) > 0) return true;
+  const resetMs = quota?.resetAt ? new Date(quota.resetAt).getTime() : 0;
+  return resetMs > 0 && resetMs <= Date.now();
+}
+
+/**
+ * Mirror of the router's account pick (auth.js getProviderCredentials) for the
+ * quota view: fill-first over active accounts in priority order. An account
+ * serves a pool while every row of that pool still has quota — the router skips
+ * the account when any bucket of the family reads 0%.
+ *
+ * Rows hidden by quota visibility still count: routing does not know the UI
+ * filter. Accounts on other pages are absent from `connections`, so a pool won
+ * by one of them ends up with no owner here — the view renders that as
+ * "elsewhere" instead of naming the wrong account.
+ *
+ * @returns {{ poolsByConnection: Map<string, Set<string>>,
+ *             poolOwnersByProvider: Map<string, Map<string, string>>,
+ *             poolKeysByProvider: Map<string, Set<string>> }}
+ * ponytail: fill-first only; round-robin rotation is not reflected here.
+ */
+export function findInUsePools(connections = [], quotaData = {}) {
+  const poolsByConnection = new Map();
+  const poolOwnersByProvider = new Map();
+  const poolKeysByProvider = new Map();
+
+  const byProvider = new Map();
+  for (const conn of connections || []) {
+    const list = byProvider.get(conn.provider);
+    if (list) list.push(conn);
+    else byProvider.set(conn.provider, [conn]);
+  }
+
+  for (const [provider, conns] of byProvider) {
+    const rowsFor = (conn) => quotaData[conn.id]?.quotas || [];
+
+    const poolKeys = new Set();
+    for (const conn of conns) {
+      for (const quota of rowsFor(conn)) poolKeys.add(getQuotaPoolKey(provider, quota));
+    }
+    if (poolKeys.size === 0) continue;
+    poolKeysByProvider.set(provider, poolKeys);
+
+    const candidates = conns
+      .map((conn, index) => ({ conn, index }))
+      .filter(({ conn }) => conn.isActive !== false)
+      .sort(
+        (a, b) =>
+          (a.conn.priority || 999) - (b.conn.priority || 999) ||
+          a.index - b.index,
+      );
+
+    const owners = new Map();
+    for (const poolKey of poolKeys) {
+      const owner = candidates.find(({ conn }) => {
+        const rows = rowsFor(conn).filter(
+          (quota) => getQuotaPoolKey(provider, quota) === poolKey,
+        );
+        // No rows yet (quota still loading): fill-first still tries this account.
+        return rows.length === 0 || rows.every(isPoolRowAvailable);
+      });
+      if (!owner) continue;
+
+      owners.set(poolKey, owner.conn.id);
+      const owned = poolsByConnection.get(owner.conn.id) || new Set();
+      owned.add(poolKey);
+      poolsByConnection.set(owner.conn.id, owned);
+    }
+    poolOwnersByProvider.set(provider, owners);
+  }
+
+  return { poolsByConnection, poolOwnersByProvider, poolKeysByProvider };
 }
 
 /**
@@ -793,6 +881,22 @@ export function parseQuotaData(provider, data) {
               message: quota.message,
               isCreditBalance: quota.isCreditBalance,
               currency: quota.currency,
+            });
+          });
+        }
+        break;
+
+      case "cloudflare-ai":
+        // Synthetic daily-neuron row — CF has no REST balance endpoint, so this
+        // is derived from the account-wide lock (0% when exhausted).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name: quota.name || name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remainingPercentage: calculatePercentage(quota.used, quota.total),
+              resetAt: quota.resetAt || null,
             });
           });
         }

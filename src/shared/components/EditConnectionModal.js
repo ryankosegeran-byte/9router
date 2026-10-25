@@ -21,7 +21,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     deployment: "",
     organization: "",
   });
-  const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [cloudflareData, setCloudflareData] = useState({ accountId: "", analyticsToken: "" });
   const [awsData, setAwsData] = useState({ profile: "", region: "", accessKeyId: "", sessionToken: "" });
   const [clearAwsSessionToken, setClearAwsSessionToken] = useState(false);
   const [region, setRegion] = useState("");
@@ -48,7 +48,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         });
       }
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
-        setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
+        setCloudflareData({
+          accountId: connection.providerSpecificData.accountId || "",
+          // Never read the stored token back; blank means keep the saved one.
+          analyticsToken: "",
+        });
       }
       if (AI_PROVIDERS?.[connection.provider]?.credentialForm === "aws") {
         const psd = connection.providerSpecificData || {};
@@ -189,7 +193,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         };
       }
       if (isCloudflareAi) {
-        updates.providerSpecificData = { accountId: cloudflareData.accountId };
+        const psd = { accountId: cloudflareData.accountId };
+        // Blank = keep the saved analytics token (server merges providerSpecificData).
+        if (cloudflareData.analyticsToken.trim()) psd.analyticsToken = cloudflareData.analyticsToken.trim();
+        updates.providerSpecificData = psd;
       }
       if (usesAwsCredentialForm) {
         updates.providerSpecificData = buildAwsSpecificData();
@@ -253,6 +260,28 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               </Badge>
             )}
           </>
+        )}
+
+        {isCloudflareAi && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Cloudflare Workers AI</h3>
+            <div className="flex flex-col gap-3">
+              <Input
+                label="Account ID"
+                value={cloudflareData.accountId}
+                onChange={(e) => setCloudflareData({ ...cloudflareData, accountId: e.target.value })}
+                placeholder="abc123def456..."
+              />
+              <Input
+                label="Analytics Token (optional)"
+                type="password"
+                value={cloudflareData.analyticsToken}
+                onChange={(e) => setCloudflareData({ ...cloudflareData, analyticsToken: e.target.value })}
+                placeholder="Token with Account Analytics: Read"
+                hint="Optional. Shows real daily neuron usage. Leave blank to keep the saved token; the API key is used when none is set."
+              />
+            </div>
+          </div>
         )}
 
         {isAzure && (

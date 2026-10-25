@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { formatResetTime, getRemainingPercentage } from "./utils";
+import {
+  formatResetTime,
+  getQuotaPoolKey,
+  getRemainingPercentage,
+} from "./utils";
 
 const PAGE_SIZE = 10;
 
@@ -90,6 +94,9 @@ export default function QuotaTable({
   sortMode = "default",
   showSortLabel = false,
   onHideQuota = null,
+  provider = null,
+  inUsePools = null,
+  handoffPools = null,
 }) {
   const [page, setPage] = useState(1);
 
@@ -177,6 +184,37 @@ export default function QuotaTable({
           const recurring = quota.recurring !== false;
           const countdownLabel = recurring ? `in ${countdown}` : `expires in ${countdown}`;
 
+          // Pool ownership: the chip says who is serving this pool right now.
+          // A pool this account does not own is labelled instead of left blank,
+          // so "Claude ran dry here" also answers "then who serves it?".
+          const poolKey = getQuotaPoolKey(provider, quota);
+          const handoffLabel = handoffPools?.get(poolKey);
+          const poolChip = inUsePools?.has(poolKey) ? (
+            <span
+              className="inline-flex shrink-0 items-center gap-1 rounded-[4px] bg-brand-500/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.08em] text-brand-600 dark:text-brand-300"
+              title={`${quota.name} is served by this account`}
+            >
+              <span
+                aria-hidden
+                className="size-1.5 rounded-full bg-brand-500 motion-safe:animate-pulse"
+              />
+              In use
+            </span>
+          ) : handoffLabel !== undefined ? (
+            <span
+              className="inline-flex min-w-0 shrink items-center rounded-[4px] bg-black/[0.04] px-1.5 py-px text-[9px] font-medium text-text-muted dark:bg-white/[0.06]"
+              title={
+                handoffLabel
+                  ? `${quota.name} is served by ${handoffLabel} right now`
+                  : `${quota.name} is served by an account on another page, or no account has quota left`
+              }
+            >
+              <span className="truncate">
+                {handoffLabel ? `→ ${handoffLabel}` : "→ elsewhere"}
+              </span>
+            </span>
+          ) : null;
+
           // "See details" rows are a link to the provider's own usage page —
           // used where the API exposes no per-bucket date (Qoder add-on grants).
           const renderResetCell = (className) =>
@@ -208,6 +246,8 @@ export default function QuotaTable({
                   {quota.name}
                 </span>
               </div>
+
+              {poolChip}
 
               {/* Progress + used/total */}
               <div className={`min-w-0 flex-1 ${compact ? "space-y-1" : "space-y-1.5"}`}>

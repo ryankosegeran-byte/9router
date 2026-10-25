@@ -10,6 +10,7 @@ import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
 import { toProviderConnectionResponse } from "@/lib/providerConnectionResponse";
+import { findPrimaryConnectionIds } from "@/shared/utils/primaryAccount";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,7 @@ export async function GET() {
     } catch { }
 
     // Hide sensitive fields, enrich name for compatible providers
+    const primaryIds = findPrimaryConnectionIds(connections);
     const safeConnections = connections.map(c => {
       const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
       const name = isCompatible
@@ -70,6 +72,7 @@ export async function GET() {
       return {
         ...toProviderConnectionResponse(c),
         name,
+        isPrimary: primaryIds.has(c.id),
       };
     });
 

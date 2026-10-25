@@ -7,7 +7,7 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, inUseLabels = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -210,6 +210,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
           )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+            {connection.isActive !== false &&
+              (inUseLabels || []).map((label) => (
+                <Badge key={label || "all"} variant="primary" size="sm" dot>
+                  {label ? `In use · ${label}` : "In use"}
+                </Badge>
+              ))}
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
@@ -370,4 +376,6 @@ ConnectionRow.propTypes = {
     scheduleSummary: PropTypes.string,
     onConfigure: PropTypes.func,
   }),
+  // One entry per quota pool this account serves; null = serves every pool.
+  inUseLabels: PropTypes.arrayOf(PropTypes.string),
 };
