@@ -886,6 +886,22 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "cloudflare-ai":
+        // Synthetic daily-neuron row — CF has no REST balance endpoint, so this
+        // is derived from the account-wide lock (0% when exhausted).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name: quota.name || name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remainingPercentage: calculatePercentage(quota.used, quota.total),
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {

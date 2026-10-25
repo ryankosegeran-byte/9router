@@ -13,6 +13,34 @@ export function getQuotaCooldown(backoffLevel = 0) {
 }
 
 /**
+ * Cloudflare Workers AI free tier: 10,000 neurons/day per account, shared
+ * across every model (text + image), resetting at 00:00 UTC. There is no REST
+ * endpoint to read the remaining balance, so the only signal is upstream error.
+ */
+export const CLOUDFLARE_DAILY_NEURON_LIMIT = 10_000;
+
+/** Epoch ms of the next 00:00 UTC boundary. */
+export function nextUtcMidnightMs(now = Date.now()) {
+  const d = new Date(now);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1);
+}
+
+const CF_DAILY_QUOTA_PATTERNS = ["3036", "daily free allocation", "daily neuron"];
+
+/**
+ * Detect Cloudflare daily-neuron exhaustion. Returns the reset epoch (next UTC
+ * midnight) when the error matches, else null. Caller normalizes `provider`.
+ */
+export function cloudflareDailyQuotaResetMs(status, errorText, provider) {
+  if (provider !== "cloudflare-ai") return null;
+  const text = errorText
+    ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
+    : "";
+  if (!CF_DAILY_QUOTA_PATTERNS.some((p) => text.includes(p))) return null;
+  return nextUtcMidnightMs();
+}
+
+/**
  * Check if error should trigger account fallback (switch to next account)
  * Config-driven: matches ERROR_RULES top-to-bottom (text rules first, then status)
  * @param {number} status - HTTP status code
